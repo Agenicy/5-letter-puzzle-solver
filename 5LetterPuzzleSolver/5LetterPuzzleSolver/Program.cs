@@ -16,7 +16,7 @@ namespace _5LetterPuzzleSolver
 		public const int cint_letterLength = 5;
 		public const float cf_EnglishLettersCount = 26;
 		public const float cf_SearchDepth = cf_EnglishLettersCount / cint_letterLength;
-		public const float cf_WinValueHeuristic = 0.8f * cf_SearchDepth;
+		public const float cf_WinValueHeuristic = (int)cf_SearchDepth - 1;
 		const bool isNeedToRegenFile = false;
 
 		static void Main(string[] args)
@@ -107,7 +107,9 @@ namespace _5LetterPuzzleSolver
 		int int_VisitCount = 0;
 		float f_WinCount = 0;
 		float value;
-		const int cint_VisitLimit = 100000;
+		float f_HeuristicValue = 1.0f;
+		static HashSet<char> check = new HashSet<char>() { 'a', 'e', 'i', 'o', 'u' };
+		const int cint_VisitLimit = 10000;
 
 		public TreeNode(List<string> space, string move, TreeNode parent = null)
 		{
@@ -115,6 +117,11 @@ namespace _5LetterPuzzleSolver
 			foreach (var c in move)
 			{
 				chars.Add(c);
+
+				if (check.Contains(c))
+				{
+					f_HeuristicValue -= 0.2f;
+				}
 			}
 			if (parent is null)
 				root = this;
@@ -122,6 +129,7 @@ namespace _5LetterPuzzleSolver
 			{
 				chars.UnionWith(parent.chars);
 			}
+
 
 			this.space = new List<string>(space);
 			this.move = move;
@@ -207,7 +215,7 @@ namespace _5LetterPuzzleSolver
 			}
 
 			// Simulation
-			node.value = EvaluateRollout(node);
+			node.value = EvaluateRollout(node.DeepCopy()); // deep copy
 
 			// virtual loss
 			expandNode.f_WinCount += 1;
@@ -218,24 +226,22 @@ namespace _5LetterPuzzleSolver
 
 		static float EvaluateRollout(TreeNode node)
 		{
-			TreeNode now = node.DeepCopy(); // deep copy
-
-			if (now.isEnd)
-				return now.isWin();
+			if (node.isEnd)
+				return node.isWin();
 
 			for (int i = 0; i < Program.cf_SearchDepth; i++)
 			{
-				if (now.isLeaf)
-					now.Expand();
+				if (node.isLeaf)
+					node.Expand();
 
-				if (now.isEnd)
+				if (node.isEnd)
 					break;
 
-				now = now.Select();
+				node = node.Select();
 			}
 
 			// now is leaf, and game over
-			return now.isWin();
+			return node.isWin();
 		}
 
 		public static void UpdateWithMove(string move)
@@ -323,7 +329,25 @@ namespace _5LetterPuzzleSolver
 			if (child.Count == 0)
 				return this;
 
-			return child[random.Next(0, child.Count)];
+			//return child[random.Next(0, child.Count)];
+
+			float valueTotal = 0;
+			List<float> Dart_Float = new List<float>();
+
+			for (int i = 0; i < child.Count; i++)
+			{
+				valueTotal += child[i].GetHeuristicValue(); // must > 0
+				Dart_Float.Add(valueTotal);
+			}
+
+			double dartValue = random.NextDouble() * valueTotal;
+			for (int i = 0; i < Dart_Float.Count; i++)
+			{
+				if (dartValue <= Dart_Float[i])
+					return child[i];
+			}
+
+			throw new Exception();
 		}
 
 		public void Update(float value)
@@ -337,25 +361,18 @@ namespace _5LetterPuzzleSolver
 			parent?.BackPropagate(value);
 		}
 
-		float GetValue()
+		float GetHeuristicValue()
 		{
 			if (parent is null)
 				return 0;
 
-			return (f_WinCount / (1 + (float)int_VisitCount)) + (float)Math.Sqrt(Math.Log(1 + parent.int_VisitCount) / (1 + (float)int_VisitCount));
+			return 1 + f_HeuristicValue + (f_WinCount / (1 + (float)int_VisitCount)) + (float)Math.Sqrt(Math.Log(1 + parent.int_VisitCount) / (1 + (float)int_VisitCount));
 		}
 
-		float isWin()
+		int isWin()
 		{
-			var key = new HashSet<char>();
-			foreach (var c in move)
-			{
-				key.Add(c);
-			}
-			key.IntersectWith(new HashSet<char>() { 'a', 'e', 'i', 'o', 'u' });
-
 			if (isEnd)
-				return int_WordsCount - Program.cf_WinValueHeuristic - Math.Max(0, key.Count - 1);
+				return int_WordsCount > Program.cf_WinValueHeuristic?1:0;
 			else
 				return 0;
 		}
